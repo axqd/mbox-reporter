@@ -1,0 +1,7 @@
+/.idea/
+/.claude/
+/.cursor/
+/data/
+/mbox-reporter
+client_secret*.json
+token.json
