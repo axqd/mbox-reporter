@@ -28,6 +28,17 @@ Trash Gmail threads matching a criterion:
 mbox-reporter trash <path/to/file.mbox> --client-secret=client_secret.json --from=addr@example.com
 ```
 
+## Downloading emails from Gmail via Google Takeout
+
+1. Go to [Google Takeout](https://takeout.google.com/)
+2. Click **Deselect all**, then scroll down and check **Mail** only
+3. Click **All Mail data included** to export all mail
+4. Click **Next step**
+5. Choose **Send download link via email** as delivery method, **`.zip`** as file type, and 50GB as file size
+6. Click **Create export**
+7. Wait for the export to complete — Google will email you a download link (this can take hours or days for large mailboxes)
+8. Download and extract the archive — the MBOX file will be at `Takeout/Mail/All mail Including Spam and Trash.mbox`
+
 ## Preparation for the `client_secret.json` file
 
 The `trash` command requires a Google Cloud OAuth2 client secret file. To create one:
