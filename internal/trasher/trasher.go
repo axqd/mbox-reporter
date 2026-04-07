@@ -3,6 +3,7 @@ package trasher
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/mail"
@@ -10,6 +11,7 @@ import (
 	"strings"
 
 	emailpkg "github.com/axqd/mbox-reporter/internal/email"
+	"github.com/axqd/mbox-reporter/internal/gmail"
 	"github.com/axqd/mbox-reporter/internal/mbox"
 	"github.com/schollz/progressbar/v3"
 )
@@ -145,7 +147,7 @@ func (t *Trasher) trash(ctx context.Context, threadIDs []string) error {
 		progressbar.OptionSetWidth(40),
 	)
 
-	var trashed int
+	var trashed, notFound int
 	for _, id := range threadIDs {
 		select {
 		case <-ctx.Done():
@@ -156,6 +158,11 @@ func (t *Trasher) trash(ctx context.Context, threadIDs []string) error {
 		}
 
 		err := t.Client.TrashThread(ctx, id)
+		if errors.Is(err, gmail.ErrNotFound) {
+			notFound++
+			_ = bar.Add(1)
+			continue
+		}
 		if err != nil {
 			_ = bar.Finish()
 			_, _ = fmt.Fprintf(t.Out, "\nError after trashing %d/%d threads: %v\n", trashed, total, err)
@@ -166,7 +173,12 @@ func (t *Trasher) trash(ctx context.Context, threadIDs []string) error {
 	}
 
 	_ = bar.Finish()
-	_, _ = fmt.Fprintf(t.Out, "\nDone. Moved %d threads to trash.\n", trashed)
+	_, _ = fmt.Fprintf(t.Out, "\nDone. Moved %d threads to trash.", trashed)
+	if notFound > 0 {
+		_, _ = fmt.Fprintf(t.Out, " Skipped %d threads (not found).", notFound)
+	}
+
+	_, _ = fmt.Fprintln(t.Out)
 
 	return nil
 }

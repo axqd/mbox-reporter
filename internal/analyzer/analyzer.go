@@ -62,7 +62,8 @@ type messageResult struct {
 // Analyze reads all messages from the parser and returns aggregated stats.
 // Parsing is done sequentially; per-message analysis runs in parallel.
 // A bounded buffer pool provides back-pressure and avoids per-message allocation.
-func Analyze(src MessageSource) (*Stats, error) {
+// Messages from addresses in excludeEmails are skipped.
+func Analyze(src MessageSource, excludeEmails map[string]struct{}) (*Stats, error) {
 	numWorkers := runtime.NumCPU()
 
 	const initCap = 64 * 1024     // 64 KB initial buffer capacity
@@ -99,6 +100,11 @@ func Analyze(src MessageSource) (*Stats, error) {
 				pool.Put(buf)
 				if err != nil {
 					continue
+				}
+				if excludeEmails != nil {
+					if _, excluded := excludeEmails[strings.ToLower(res.email)]; excluded {
+						continue
+					}
 				}
 				resultCh <- res
 			}

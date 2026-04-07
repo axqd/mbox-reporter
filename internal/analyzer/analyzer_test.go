@@ -213,7 +213,7 @@ func TestAnalyze_Integration(t *testing.T) {
 		},
 	}
 
-	stats, err := Analyze(src)
+	stats, err := Analyze(src, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -244,9 +244,61 @@ func TestAnalyze_Integration(t *testing.T) {
 	}
 }
 
+func TestAnalyze_ExcludeEmails(t *testing.T) {
+	src := &mockSource{
+		messages: [][]byte{
+			makeRawMessage("Alice <alice@example.com>", "Msg 1", "Hello"),
+			makeRawMessage("Alice <alice@example.com>", "Msg 2", "World"),
+			makeRawMessage("Bob <bob@other.org>", "Msg 3", "Hi"),
+		},
+	}
+
+	exclude := map[string]struct{}{
+		"alice@example.com": {},
+	}
+
+	stats, err := Analyze(src, exclude)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, ok := stats.ByEmail["alice@example.com"]; ok {
+		t.Error("alice should be excluded from stats")
+	}
+
+	bobStat, ok := stats.ByEmail["bob@other.org"]
+	if !ok {
+		t.Fatal("expected stats for bob@other.org")
+	}
+	if bobStat.Count != 1 {
+		t.Errorf("bob count = %d, want 1", bobStat.Count)
+	}
+}
+
+func TestAnalyze_ExcludeAll(t *testing.T) {
+	src := &mockSource{
+		messages: [][]byte{
+			makeRawMessage("Alice <alice@example.com>", "Msg 1", "Hello"),
+		},
+	}
+
+	exclude := map[string]struct{}{
+		"alice@example.com": {},
+	}
+
+	stats, err := Analyze(src, exclude)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(stats.ByEmail) != 0 {
+		t.Errorf("expected empty ByEmail, got %d entries", len(stats.ByEmail))
+	}
+}
+
 func TestAnalyze_EmptySource(t *testing.T) {
 	src := &mockSource{}
-	stats, err := Analyze(src)
+	stats, err := Analyze(src, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

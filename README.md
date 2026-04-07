@@ -68,4 +68,6 @@ The `trash` command requires a Google Cloud OAuth2 client secret file. To create
 
 ### First run
 
-On the first run, `mbox-reporter trash` will print a URL. Open it in your browser, authorize access. The resulting token is cached as `token.json` next to the binary so subsequent runs won't require browser auth.
+On the first run, `mbox-reporter trash` will print a URL. Open it in your browser, authorize access. The resulting token is cached in `cache.json` next to the binary so subsequent runs won't require browser auth.
+
+Trashed email addresses are also recorded in `cache.json` and automatically excluded from future `report` runs.

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/axqd/mbox-reporter/internal/gmail"
 )
 
 func TestFromAddress_Match(t *testing.T) {
@@ -60,11 +62,17 @@ func TestDecimalToHex(t *testing.T) {
 
 // mockClient records TrashThread calls.
 type mockClient struct {
-	trashedIDs []string
-	failAfter  int // fail after N successful calls (-1 = never fail)
+	trashedIDs  []string
+	failAfter   int               // fail after N successful calls (-1 = never fail)
+	notFoundIDs map[string]struct{} // thread IDs that return ErrNotFound
 }
 
 func (m *mockClient) TrashThread(_ context.Context, threadID string) error {
+	if m.notFoundIDs != nil {
+		if _, ok := m.notFoundIDs[threadID]; ok {
+			return gmail.ErrNotFound
+		}
+	}
 	if m.failAfter >= 0 && len(m.trashedIDs) >= m.failAfter {
 		return fmt.Errorf("API error")
 	}
@@ -248,6 +256,41 @@ func TestRun_NoMatches(t *testing.T) {
 
 	if !strings.Contains(out.String(), "Nothing to trash") {
 		t.Error("expected 'Nothing to trash' in output")
+	}
+}
+
+func TestRun_NotFound(t *testing.T) {
+	data := makeMbox(
+		struct{ from, thrid, body string }{"Alice <alice@example.com>", "255", "hello"},
+		struct{ from, thrid, body string }{"Alice <alice@example.com>", "16", "world"},
+	)
+
+	client := &mockClient{
+		failAfter:   -1,
+		notFoundIDs: map[string]struct{}{"ff": {}},
+	}
+	out := &bytes.Buffer{}
+	tr := &Trasher{
+		Client:      client,
+		Criterion:   FromAddress{Address: "alice@example.com"},
+		SkipConfirm: true,
+		RateLimit:   25,
+		Out:         out,
+		In:          strings.NewReader(""),
+	}
+
+	err := tr.Run(context.Background(), bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+
+	if len(client.trashedIDs) != 1 {
+		t.Errorf("trashed %d threads, want 1", len(client.trashedIDs))
+	}
+
+	output := out.String()
+	if !strings.Contains(output, "Skipped 1 threads (not found)") {
+		t.Errorf("expected not-found message in output, got: %s", output)
 	}
 }
 

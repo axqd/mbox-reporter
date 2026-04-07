@@ -14,6 +14,7 @@ See [README.md](README.md) for usage, installation, and Gmail API setup.
 
 - `internal/mbox` — streams RFC 2822 messages from MBOX files
 - `internal/email` — parses sender info from From headers
+- `internal/cache` — persistent state (OAuth token + trashed criteria) in `cache.json`
 - `openMbox()` in main — shared file open/stat helper
 
 ### Report: MBOX analysis
@@ -38,4 +39,5 @@ CLI Input -> MBOX Parser -> Criterion Filter -> X-GM-THRID extraction -> Gmail A
 
 - Always run `make` to ensure lint, test, and build can pass after code changes
 - Keep code changes and newly added features minimal
+- Always add or update unit tests when adding or updating features
 - Use `errors.Is` for sentinel error checks and `errors.AsType` for typed error checks

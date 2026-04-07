@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/axqd/mbox-reporter/internal/analyzer"
+	"github.com/axqd/mbox-reporter/internal/cache"
 	"github.com/axqd/mbox-reporter/internal/gmail"
 	"github.com/axqd/mbox-reporter/internal/mbox"
 	"github.com/axqd/mbox-reporter/internal/reporter"
@@ -63,10 +64,16 @@ func reportCommand() *cli.Command {
 				return err
 			}
 			defer func() { _ = file.Close() }()
+
+			c, err := cache.Load()
+			if err != nil {
+				return fmt.Errorf("load cache: %w", err)
+			}
+
 			reader, markBarFinish := attachProgressBar(file, size)
 
 			parser := mbox.NewParser(reader)
-			stats, err := analyzer.Analyze(parser)
+			stats, err := analyzer.Analyze(parser, c.Trashed.ExcludeSet())
 			markBarFinish()
 			_, _ = fmt.Fprintln(os.Stderr)
 			if err != nil {
@@ -161,11 +168,17 @@ func runTrash(ctx context.Context, opts trashOptions) error {
 	}
 	defer func() { _ = file.Close() }()
 
+	// Load cache.
+	c, err := cache.Load()
+	if err != nil {
+		return fmt.Errorf("load cache: %w", err)
+	}
+
 	// Build criterion.
 	criterion := trasher.FromAddress{Address: opts.from}
 
 	// Authenticate and create Gmail client.
-	svc, err := gmail.NewService(ctx, opts.clientSecret)
+	svc, err := gmail.NewService(ctx, opts.clientSecret, c)
 	if err != nil {
 		return fmt.Errorf("gmail auth: %w", err)
 	}
@@ -190,7 +203,17 @@ func runTrash(ctx context.Context, opts trashOptions) error {
 			os.Stderr, "Hint: %d backoffs occurred. Try --rate=%d next time.\n", backoffs, suggestedRate)
 	}
 
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Record trashed email in cache.
+	c.Trashed.AddEmail(opts.from)
+	if err := c.Save(); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Warning: could not update cache: %v\n", err)
+	}
+
+	return nil
 }
 
 func openMbox(path string) (*os.File, int64, error) {

@@ -2,14 +2,13 @@ package gmail
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 
+	"github.com/axqd/mbox-reporter/internal/cache"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/gmail/v1"
@@ -17,8 +16,8 @@ import (
 )
 
 // NewService creates an authenticated Gmail API service.
-// The token is cached next to the executable binary.
-func NewService(ctx context.Context, clientSecretPath string) (*gmail.Service, error) {
+// The token is read from and saved to the provided cache.
+func NewService(ctx context.Context, clientSecretPath string, c *cache.Cache) (*gmail.Service, error) {
 	b, err := os.ReadFile(clientSecretPath)
 	if err != nil {
 		return nil, fmt.Errorf("read client secret file: %w", err)
@@ -29,7 +28,7 @@ func NewService(ctx context.Context, clientSecretPath string) (*gmail.Service, e
 		return nil, fmt.Errorf("parse client secret: %w", err)
 	}
 
-	tok, err := loadOrObtainToken(ctx, config)
+	tok, err := loadOrObtainToken(ctx, config, c)
 	if err != nil {
 		return nil, err
 	}
@@ -37,31 +36,18 @@ func NewService(ctx context.Context, clientSecretPath string) (*gmail.Service, e
 	return gmail.NewService(ctx, option.WithTokenSource(config.TokenSource(ctx, tok)))
 }
 
-func tokenPath() (string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", fmt.Errorf("get executable path: %w", err)
+func loadOrObtainToken(ctx context.Context, config *oauth2.Config, c *cache.Cache) (*oauth2.Token, error) {
+	if c.OAuthToken != nil {
+		return c.OAuthToken, nil
 	}
-	return filepath.Join(filepath.Dir(exe), "token.json"), nil
-}
 
-func loadOrObtainToken(ctx context.Context, config *oauth2.Config) (*oauth2.Token, error) {
-	tokFile, err := tokenPath()
+	tok, err := obtainToken(ctx, config)
 	if err != nil {
 		return nil, err
 	}
 
-	tok, err := loadToken(tokFile)
-	if err == nil {
-		return tok, nil
-	}
-
-	tok, err = obtainToken(ctx, config)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := saveToken(tokFile, tok); err != nil {
+	c.OAuthToken = tok
+	if err := c.Save(); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Warning: could not cache token: %v\n", err)
 	}
 
@@ -120,29 +106,3 @@ func obtainToken(ctx context.Context, config *oauth2.Config) (*oauth2.Token, err
 	return tok, nil
 }
 
-func loadToken(path string) (*oauth2.Token, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = f.Close() }()
-
-	var tok oauth2.Token
-	if err := json.NewDecoder(f).Decode(&tok); err != nil {
-		return nil, err
-	}
-	return &tok, nil
-}
-
-func saveToken(path string, token *oauth2.Token) error {
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	encErr := json.NewEncoder(f).Encode(token)
-	closeErr := f.Close()
-	if encErr != nil {
-		return encErr
-	}
-	return closeErr
-}

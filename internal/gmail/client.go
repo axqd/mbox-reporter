@@ -15,6 +15,9 @@ import (
 
 const maxRetries = 5
 
+// ErrNotFound indicates the requested thread was not found (already deleted).
+var ErrNotFound = errors.New("thread not found")
+
 // Client wraps a Gmail service with rate limiting and retry logic.
 type Client struct {
 	svc          *gmail.Service
@@ -38,6 +41,9 @@ func (c *Client) TrashThread(ctx context.Context, threadID string) error {
 			return err
 		}
 		_, err := c.svc.Users.Threads.Trash("me", threadID).Context(ctx).Do()
+		if isNotFound(err) {
+			return ErrNotFound
+		}
 		return err
 	})
 }
@@ -55,7 +61,7 @@ func (c *Client) withRetry(ctx context.Context, fn func() error) error {
 			return nil
 		}
 
-		if !isRateLimitError(lastErr) {
+		if errors.Is(lastErr, ErrNotFound) || !isRateLimitError(lastErr) {
 			return lastErr
 		}
 
@@ -74,6 +80,13 @@ func (c *Client) withRetry(ctx context.Context, fn func() error) error {
 func isRateLimitError(err error) bool {
 	if apiErr, ok := errors.AsType[*googleapi.Error](err); ok {
 		return apiErr.Code == 429 || apiErr.Code == 403
+	}
+	return false
+}
+
+func isNotFound(err error) bool {
+	if apiErr, ok := errors.AsType[*googleapi.Error](err); ok {
+		return apiErr.Code == 404
 	}
 	return false
 }
