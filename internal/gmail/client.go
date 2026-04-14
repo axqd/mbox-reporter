@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -17,6 +18,9 @@ const maxRetries = 5
 
 // ErrNotFound indicates the requested thread was not found (already deleted).
 var ErrNotFound = errors.New("thread not found")
+
+// ErrInvalidGrant indicates the OAuth token has been expired or revoked.
+var ErrInvalidGrant = errors.New("token expired or revoked")
 
 // Client wraps a Gmail service with rate limiting and retry logic.
 type Client struct {
@@ -61,6 +65,9 @@ func (c *Client) withRetry(ctx context.Context, fn func() error) error {
 			return nil
 		}
 
+		if isInvalidGrantError(lastErr) {
+			return ErrInvalidGrant
+		}
 		if errors.Is(lastErr, ErrNotFound) || !isRateLimitError(lastErr) {
 			return lastErr
 		}
@@ -82,6 +89,10 @@ func isRateLimitError(err error) bool {
 		return apiErr.Code == 429 || apiErr.Code == 403
 	}
 	return false
+}
+
+func isInvalidGrantError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "invalid_grant")
 }
 
 func isNotFound(err error) bool {

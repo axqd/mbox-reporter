@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -195,6 +196,23 @@ func runTrash(ctx context.Context, opts trashOptions) error {
 	}
 
 	err = tr.Run(ctx, file, size)
+	if errors.Is(err, gmail.ErrInvalidGrant) {
+		_, _ = fmt.Fprintln(os.Stderr, "OAuth token expired or revoked. Clearing cached token and re-authenticating...")
+		c.OAuthToken = nil
+		if saveErr := c.Save(); saveErr != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "Warning: could not clear cached token: %v\n", saveErr)
+		}
+		if _, seekErr := file.Seek(0, io.SeekStart); seekErr != nil {
+			return fmt.Errorf("seek mbox file: %w", seekErr)
+		}
+		svc, err = gmail.NewService(ctx, opts.clientSecret, c)
+		if err != nil {
+			return fmt.Errorf("gmail re-auth: %w", err)
+		}
+		tr.Client = gmail.NewClient(svc, opts.rateLimit)
+		tr.SkipConfirm = true
+		err = tr.Run(ctx, file, size)
+	}
 
 	// Report backoff hint if applicable.
 	if backoffs := client.BackoffCount(); backoffs > 0 {

@@ -3,6 +3,7 @@ package trasher
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -63,7 +64,8 @@ func TestDecimalToHex(t *testing.T) {
 // mockClient records TrashThread calls.
 type mockClient struct {
 	trashedIDs  []string
-	failAfter   int               // fail after N successful calls (-1 = never fail)
+	failAfter   int                // fail after N successful calls (-1 = never fail)
+	errToReturn error              // error to return on failure (defaults to generic API error)
 	notFoundIDs map[string]struct{} // thread IDs that return ErrNotFound
 }
 
@@ -74,6 +76,9 @@ func (m *mockClient) TrashThread(_ context.Context, threadID string) error {
 		}
 	}
 	if m.failAfter >= 0 && len(m.trashedIDs) >= m.failAfter {
+		if m.errToReturn != nil {
+			return m.errToReturn
+		}
 		return fmt.Errorf("API error")
 	}
 	m.trashedIDs = append(m.trashedIDs, threadID)
@@ -291,6 +296,28 @@ func TestRun_NotFound(t *testing.T) {
 	output := out.String()
 	if !strings.Contains(output, "Skipped 1 threads (not found)") {
 		t.Errorf("expected not-found message in output, got: %s", output)
+	}
+}
+
+func TestRun_InvalidGrant(t *testing.T) {
+	data := makeMbox(
+		struct{ from, thrid, body string }{"Alice <alice@example.com>", "255", "hello"},
+	)
+
+	client := &mockClient{failAfter: 0, errToReturn: gmail.ErrInvalidGrant}
+	out := &bytes.Buffer{}
+	tr := &Trasher{
+		Client:      client,
+		Criterion:   FromAddress{Address: "alice@example.com"},
+		SkipConfirm: true,
+		RateLimit:   25,
+		Out:         out,
+		In:          strings.NewReader(""),
+	}
+
+	err := tr.Run(context.Background(), bytes.NewReader(data), int64(len(data)))
+	if !errors.Is(err, gmail.ErrInvalidGrant) {
+		t.Errorf("Run() error = %v, want ErrInvalidGrant", err)
 	}
 }
 
